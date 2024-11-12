@@ -1,5 +1,6 @@
 import streamlit as st
-import feedparser
+import requests
+import xml.etree.ElementTree as ET
 
 # Base URL for arXiv API
 BASE_URL = 'http://export.arxiv.org/api/query?'
@@ -14,12 +15,28 @@ def fetch_papers(search_query="all", start=0, max_results=5):
         max_results (int): The maximum number of results to fetch.
 
     Returns:
-        list: A list of entries (papers) from arXiv.
+        list: A list of dictionaries containing paper information.
     """
     query = f'search_query={search_query}&start={start}&max_results={max_results}'
     url = BASE_URL + query
-    feed = feedparser.parse(url)
-    return feed.entries
+    response = requests.get(url)
+    root = ET.fromstring(response.content)
+    
+    papers = []
+    for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
+        title = entry.find("{http://www.w3.org/2005/Atom}title").text
+        authors = [author.find("{http://www.w3.org/2005/Atom}name").text for author in entry.findall("{http://www.w3.org/2005/Atom}author")]
+        summary = entry.find("{http://www.w3.org/2005/Atom}summary").text
+        categories = [category.attrib['term'] for category in entry.findall("{http://www.w3.org/2005/Atom}category")]
+        link = entry.find("{http://www.w3.org/2005/Atom}id").text
+        papers.append({
+            "title": title,
+            "authors": authors,
+            "summary": summary,
+            "categories": categories,
+            "link": link
+        })
+    return papers
 
 # Initialize session state
 if 'papers' not in st.session_state:
@@ -45,12 +62,11 @@ if st.button("Fetch Papers"):
 if st.session_state.papers:
     st.write("Select papers you like or dislike:")
     for idx, paper in enumerate(st.session_state.papers):
-        title = paper.title
-        authors = ', '.join(author.name for author in paper.authors)
-        abstract = paper.summary.replace('\n', ' ')
-        abstract_snippet = ' '.join(abstract.split()[:50]) + '...'
-        categories = [tag.term for tag in paper.tags]
-        arxiv_url = paper.link
+        title = paper['title']
+        authors = ', '.join(paper['authors'])
+        abstract_snippet = ' '.join(paper['summary'].split()[:50]) + '...'
+        categories = paper['categories']
+        arxiv_url = paper['link']
 
         # Display paper information with checkboxes
         st.subheader(title)
@@ -101,8 +117,8 @@ if st.button("View Liked Papers"):
     else:
         st.write("Your Liked Papers:")
         for paper in st.session_state.liked_papers:
-            st.write(f"- **{paper.title}** by {', '.join(author.name for author in paper.authors)}")
-            st.write(f"[Read more on arXiv]({paper.link})")
+            st.write(f"- **{paper['title']}** by {', '.join(paper['authors'])}")
+            st.write(f"[Read more on arXiv]({paper['link']})")
 
 # Generating Recommendations
 if st.button("Generate Recommendations"):
@@ -121,7 +137,7 @@ if st.button("Generate Recommendations"):
             st.write(f"\nTop papers in category: {category}")
             recommended_papers = fetch_papers(search_query=f"cat:{category}", max_results=3)
             for paper in recommended_papers:
-                st.subheader(paper.title)
-                st.write(f"Authors: {', '.join(author.name for author in paper.authors)}")
-                st.write(f"Abstract: {' '.join(paper.summary.split()[:50])}...")
-                st.write(f"[Read more on arXiv]({paper.link})")
+                st.subheader(paper['title'])
+                st.write(f"Authors: {', '.join(paper['authors'])}")
+                st.write(f"Abstract: {' '.join(paper['summary'].split()[:50])}...")
+                st.write(f"[Read more on arXiv]({paper['link']})")
