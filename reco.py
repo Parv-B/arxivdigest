@@ -49,55 +49,65 @@ if 'disliked_categories' not in st.session_state:
     st.session_state.disliked_categories = {}
 if 'viewed_categories' not in st.session_state:
     st.session_state.viewed_categories = {}
+if 'start_index' not in st.session_state:
+    st.session_state.start_index = 0
+
+# Sidebar for navigation
+page = st.sidebar.selectbox("Navigation", ["Fetch Papers", "View Preferences", "View Liked Papers", "Generate Recommendations"])
 
 st.title("arXiv Paper Recommender")
 
-batch_size = 5  # Number of papers to fetch per request
+if page == "Fetch Papers":
+    # User interests input
+    user_interest = st.text_input("Enter your interests (e.g., machine learning, quantum computing):")
 
-# Fetch new papers
-if st.button("Fetch Papers"):
-    st.session_state.papers = fetch_papers(start=len(st.session_state.papers), max_results=batch_size)
+    # Fetch new papers
+    if st.button("Fetch Papers"):
+        search_query = user_interest if user_interest else "all"
+        new_papers = fetch_papers(search_query=search_query, start=st.session_state.start_index, max_results=5)
+        if new_papers:
+            st.session_state.papers.extend(new_papers)
+            st.session_state.start_index += 5  # Increment start index for next fetch
 
-# Display fetched papers with checkboxes for liking and disliking
-if st.session_state.papers:
-    st.write("Select papers you like or dislike:")
-    for idx, paper in enumerate(st.session_state.papers):
-        title = paper['title']
-        authors = ', '.join(paper['authors'])
-        abstract_snippet = ' '.join(paper['summary'].split()[:50]) + '...'
-        categories = paper['categories']
-        arxiv_url = paper['link']
+    # Display fetched papers with radio buttons for liking and disliking
+    if st.session_state.papers:
+        st.write("Select whether you like or dislike each paper:")
+        for idx, paper in enumerate(st.session_state.papers):
+            title = paper['title']
+            authors = ', '.join(paper['authors'])
+            abstract_snippet = ' '.join(paper['summary'].split()[:50]) + '...'
+            categories = paper['categories']
+            arxiv_url = paper['link']
 
-        # Display paper information with checkboxes
-        st.subheader(title)
-        st.write(f"**Authors:** {authors}")
-        st.write(f"**Abstract:** {abstract_snippet}")
-        st.write(f"**Categories:** {', '.join(categories)}")
-        st.write(f"[Read more on arXiv]({arxiv_url})")
+            # Display paper information
+            st.subheader(title)
+            st.write(f"**Authors:** {authors}")
+            st.write(f"**Abstract:** {abstract_snippet}")
+            st.write(f"**Categories:** {', '.join(categories)}")
+            st.write(f"[Read more on arXiv]({arxiv_url})")
 
-        # Checkbox for like and dislike
-        like = st.checkbox(f"Like {title}", key=f"like_{idx}")
-        dislike = st.checkbox(f"Dislike {title}", key=f"dislike_{idx}")
+            # Radio button for like, dislike, or neutral
+            preference = st.radio(
+                f"Your preference for '{title}'",
+                options=["Neutral", "Like", "Dislike"],
+                key=f"preference_{idx}"
+            )
 
-        # Update state based on user selection
-        if like and not dislike:
-            # Save liked paper details
-            if paper not in st.session_state.liked_papers:
-                st.session_state.liked_papers.append(paper)
-            # Update liked categories
+            # Update state based on user selection
+            if preference == "Like":
+                if paper not in st.session_state.liked_papers:
+                    st.session_state.liked_papers.append(paper)
+                for category in categories:
+                    st.session_state.liked_categories[category] = st.session_state.liked_categories.get(category, 0) + 1
+            elif preference == "Dislike":
+                for category in categories:
+                    st.session_state.disliked_categories[category] = st.session_state.disliked_categories.get(category, 0) + 1
+
             for category in categories:
-                st.session_state.liked_categories[category] = st.session_state.liked_categories.get(category, 0) + 1
-        elif dislike and not like:
-            # Update disliked categories
-            for category in categories:
-                st.session_state.disliked_categories[category] = st.session_state.disliked_categories.get(category, 0) + 1
+                st.session_state.viewed_categories[category] = st.session_state.viewed_categories.get(category, 0) + 1
 
-        # Update viewed categories
-        for category in categories:
-            st.session_state.viewed_categories[category] = st.session_state.viewed_categories.get(category, 0) + 1
-
-# Show Preferences
-if st.button("View Preferences"):
+elif page == "View Preferences":
+    st.header("View Preferences")
     if not st.session_state.viewed_categories:
         st.write("You have not viewed any papers yet.")
     else:
@@ -110,18 +120,18 @@ if st.button("View Preferences"):
         for category, score in sorted_preferences:
             st.write(f"Category: {category}, Preference Score: {score:.2f}")
 
-# Show Liked Papers
-if st.button("View Liked Papers"):
+elif page == "View Liked Papers":
+    st.header("View Liked Papers")
     if not st.session_state.liked_papers:
         st.write("You have not liked any papers yet.")
     else:
-        st.write("Your Liked Papers:")
         for paper in st.session_state.liked_papers:
-            st.write(f"- **{paper['title']}** by {', '.join(paper['authors'])}")
+            st.subheader(paper['title'])
+            st.write(f"Authors: {', '.join(paper['authors'])}")
             st.write(f"[Read more on arXiv]({paper['link']})")
 
-# Generating Recommendations
-if st.button("Generate Recommendations"):
+elif page == "Generate Recommendations":
+    st.header("Generate Recommendations")
     preference_scores = {
         category: (st.session_state.liked_categories.get(category, 0) - st.session_state.disliked_categories.get(category, 0)) / st.session_state.viewed_categories[category]
         for category in st.session_state.viewed_categories
